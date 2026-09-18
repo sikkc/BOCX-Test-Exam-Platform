@@ -1,98 +1,93 @@
 <?php
+// C:\xampp\htdocs\BOCX-Test-Exam-Platform\take_exam.php
 session_start();
-include 'db.php';
+$conn = new mysqli("localhost", "root", "", "exam_db");
 
-if (!isset($_SESSION['user_id']) ||$_SESSION['role'] !== 'student') {
-    header("Location: login.php");
-    exit();
+if ($conn->connect_error) {
+    die("Database Connection Failed: " . $conn->connect_error);
 }
 
-$exam_id = isset($_GET['exam_id']) ? intval($_GET['exam_id']) : 1; 
-$user_id =$_SESSION['user_id'];
+$exam_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
-$attempt_query =$conn->prepare("SELECT id FROM exam_attempts WHERE user_id = ? AND exam_id = ? AND status = 'in_progress'");
-$attempt_query->bind_param("ii", $user_id, $exam_id);$attempt_query->execute();
-$attempt_result =$attempt_query->get_result();
+// Fetch Exam Details
+$exam_query = $conn->prepare("SELECT * FROM exams WHERE id = ?");
+$exam_query->bind_param("i", $exam_id);
+$exam_query->execute();
+$exam = $exam_query->get_result()->fetch_assoc();
 
-if ($attempt_result->num_rows === 0) {
-    $start_stmt =$conn->prepare("INSERT INTO exam_attempts (user_id, exam_id) VALUES (?, ?)");
-    $start_stmt->bind_param("ii", $user_id, $exam_id);$start_stmt->execute();
-    $attempt_id =$start_stmt->insert_id;
-} else {
-    $attempt =$attempt_result->fetch_assoc();
-    $attempt_id =$attempt['id'];
+if (!$exam) {
+    die("Exam not found.");
 }
 
-$questions =$conn->query("SELECT * FROM questions WHERE exam_id = $exam_id");
+// Fetch All Questions for this Exam
+$questions_query = $conn->prepare("SELECT * FROM questions WHERE exam_id = ? ORDER BY id ASC");
+$questions_query->bind_param("i", $exam_id);
+$questions_query->execute();
+$questions = $questions_query->get_result()->fetch_all(MYSQLI_ASSOC);
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Active Examination</title>
+    <title><?php echo htmlspecialchars($exam['title']); ?> | Live Session</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 30px; background-color: #f8f9fa; }
-        #timer { font-size: 20px; font-weight: bold; color: #dc3545; position: fixed; top: 15px; right: 25px; background: white; padding: 10px 15px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        .question-card { background: white; border: 1px solid #dee2e6; padding: 20px; margin-bottom: 20px; border-radius: 6px; }
-        .btn-submit { padding: 12px 24px; background: #28a745; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; background: white; padding: 15px 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); position: sticky; top: 10px; z-index: 100; margin-bottom: 20px; }
+        .timer-badge { background: #dc3545; color: white; padding: 8px 15px; border-radius: 5px; font-weight: bold; font-size: 16px; }
+        .question-card { background: white; border-radius: 8px; padding: 25px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .question-title { font-weight: bold; font-size: 16px; margin-bottom: 15px; color: #222; line-height: 1.5; }
+        .option-label { display: flex; align-items: flex-start; padding: 10px 12px; margin-bottom: 8px; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; transition: background 0.2s; white-space: normal; word-break: break-word; }
+        .option-label:hover { background: #f8fafc; }
+        .option-label input[type="radio"] { margin-top: 3px; margin-right: 12px; flex-shrink: 0; }
+        .submit-btn { background: #28a745; color: white; border: none; padding: 15px 30px; font-size: 18px; border-radius: 6px; cursor: pointer; width: 100%; margin-top: 20px; font-weight: bold; }
+        .submit-btn:hover { background: #218838; }
     </style>
 </head>
 <body>
 
-<div id="timer">Time Left: <span id="time-display">15:00</span></div>
+<div style="max-width: 1000px; margin: auto;">
+    <div class="header-bar">
+        <h2 style="margin: 0;"><?php echo htmlspecialchars($exam['title']); ?></h2>
+        <div class="timer-badge">Time Remaining: <span id="timer"><?php echo $exam['time_limit_minutes']; ?>:00</span></div>
+    </div>
 
-<h2>Live Exam Session</h2>
+    <form action="submit_exam.php" method="POST">
+        <input type="hidden" name="exam_id" value="<?php echo $exam_id; ?>">
 
-<form id="examForm" action="process_exam.php" method="POST">
-    <input type="hidden" name="attempt_id" value="<?php echo $attempt_id; ?>">
-    <input type="hidden" name="exam_id" value="<?php echo $exam_id; ?>">
+        <?php foreach ($questions as $index => $q): ?>
+            <div class="question-card">
+                <!-- Displays the full untruncated question text -->
+                <div class="question-title">
+                    Q<?php echo ($index + 1); ?>: <?php echo htmlspecialchars($q['question_text']); ?>
+                </div>
 
-    <?php $q_num = 1; while ($q =$questions->fetch_assoc()): ?>
-        <div class="question-card">
-            <p><strong>Q<?php echo $q_num++; ?>: <?php echo htmlspecialchars($q['question_text']); ?></strong></p>
-            <?php foreach (['A', 'B', 'C', 'D'] as $opt): ?>
-                <label style="display: block; margin-bottom: 8px;">
-                    <input type="radio" name="answers[<?php echo $q['id']; ?>]" value="<?php echo $opt; ?>" required>
-                    <?php echo htmlspecialchars($q['option_' . strtolower($opt)]); ?>
+                <!-- Displays full untruncated options A, B, C, D -->
+                <label class="option-label">
+                    <input type="radio" name="answers[<?php echo $q['id']; ?>]" value="A" required>
+                    <span><?php echo htmlspecialchars($q['option_a']); ?></span>
                 </label>
-            <?php endforeach; ?>
-        </div>
-    <?php endwhile; ?>
 
-    <button type="submit" class="btn-submit">Submit Exam</button>
-</form>
+                <label class="option-label">
+                    <input type="radio" name="answers[<?php echo $q['id']; ?>]" value="B">
+                    <span><?php echo htmlspecialchars($q['option_b']); ?></span>
+                </label>
 
-<script>
-let duration = 900; 
-const display = document.getElementById('time-display');
+                <label class="option-label">
+                    <input type="radio" name="answers[<?php echo $q['id']; ?>]" value="C">
+                    <span><?php echo htmlspecialchars($q['option_c']); ?></span>
+                </label>
 
-const timerInterval = setInterval(() => {
-    let minutes = Math.floor(duration / 60);
-    let seconds = duration % 60;
-    display.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-    
-    if (--duration < 0) {
-        clearInterval(timerInterval);
-        alert("Time expired. Submitting your answers automatically.");
-        document.getElementById('examForm').submit();
-    }
-}, 1000);
+                <label class="option-label">
+                    <input type="radio" name="answers[<?php echo $q['id']; ?>]" value="D">
+                    <span><?php echo htmlspecialchars($q['option_d']); ?></span>
+                </label>
+            </div>
+        <?php endforeach; ?>
 
-let tabSwitches = 0;
-document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-        tabSwitches++;
-        alert(`Warning ${tabSwitches}/3: Tab switching is strictly prohibited!`);
-        if (tabSwitches >= 3) {
-            document.getElementById('examForm').submit();
-        }
-    }
-});
-
-document.addEventListener("contextmenu", e => e.preventDefault());
-document.addEventListener("copy", e => e.preventDefault());
-</script>
+        <button type="submit" class="submit-btn">Submit Exam</button>
+    </form>
+</div>
 
 </body>
 </html>

@@ -2,8 +2,8 @@ import csv
 import os
 import openpyxl
 
-INPUT_DIR = r'C:\xampp\htdocs\exam_system\excel_files'
-OUTPUT_DIR = r'C:\xampp\htdocs\exam_system\csv_files'
+INPUT_DIR = r'C:\xampp\htdocs\BOCX-Test-Exam-Platform\excel_files'
+OUTPUT_DIR = r'C:\xampp\htdocs\BOCX-Test-Exam-Platform\csv_files'
 
 os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)

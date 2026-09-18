@@ -1,0 +1,13 @@
+# Python Virtual Environment
+venv/
+__pycache__/
+*.pyc
+
+# Batch Conversion Input/Output Temporary Files
+excel_files/
+docx_files/
+csv_files/*.csv
+
+# Local XAMPP & IDE Settings
+.vscode/
+.idea/
