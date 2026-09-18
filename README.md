@@ -1,1 +1,1 @@
-# -BOCX-Test-Exam-Platform
+# BOCX-Test-Exam-Platform
